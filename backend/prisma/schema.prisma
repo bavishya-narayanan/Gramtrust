@@ -1,0 +1,193 @@
+// =============================================================================
+// GramTrust - Prisma Schema
+// =============================================================================
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ---------------------------------------------------------------------------
+// ENUMS
+// ---------------------------------------------------------------------------
+
+enum UserRole {
+  ADMIN
+  OFFICIAL
+  CITIZEN
+}
+
+enum ImportStatus {
+  Success
+  Partial
+  Failed
+}
+
+enum ComplaintStatus {
+  Open
+  UnderInvestigation
+  Resolved
+  Closed
+  Rejected
+}
+
+enum ComplaintPriority {
+  Low
+  Medium
+  High
+  Critical
+}
+
+// ---------------------------------------------------------------------------
+// MODEL: User
+// ---------------------------------------------------------------------------
+model User {
+  id          String    @id @default(cuid())
+  name        String
+  email       String    @unique
+  passwordHash String   @map("password_hash")
+  role        UserRole  @default(CITIZEN)
+  district    String?
+  state       String?
+  isActive    Boolean   @default(true) @map("is_active")
+  lastLoginAt DateTime? @map("last_login_at")
+  createdAt   DateTime  @default(now()) @map("created_at")
+  updatedAt   DateTime  @updatedAt @map("updated_at")
+
+  importLogs         ImportLog[]
+  filedComplaints    Complaint[] @relation("FiledBy")
+  assignedComplaints Complaint[] @relation("AssignedTo")
+
+  @@index([role])
+  @@index([district])
+  @@index([state])
+  @@map("users")
+}
+
+// ---------------------------------------------------------------------------
+// MODEL: Project
+// ---------------------------------------------------------------------------
+model Project {
+  id               String             @id @default(cuid())
+  code             String             @unique
+  name             String
+  district         String
+  state            String
+  financialYear    String
+  amount           Decimal            @db.Decimal(18, 2)
+  status           String
+  blockchainStatus String             @default("Pending") @map("blockchain_status")
+  blockchainHash   String?            @map("blockchain_hash")
+  integrityStatus  String             @default("Review Required") @map("integrity_status")
+  createdAt        DateTime           @default(now()) @map("created_at")
+  updatedAt        DateTime           @updatedAt @map("updated_at")
+
+  records  BlockchainRecord[]
+  audits   IntegrityAudit[]
+  complaints Complaint[]
+
+  @@index([state])
+  @@index([district])
+  @@index([financialYear])
+  @@index([status])
+  @@index([blockchainStatus])
+  @@index([integrityStatus])
+  @@map("projects")
+}
+
+// ---------------------------------------------------------------------------
+// MODEL: BlockchainRecord
+// ---------------------------------------------------------------------------
+model BlockchainRecord {
+  id        String   @id @default(cuid())
+  projectId String   @map("project_id")
+  txHash    String   @unique @map("tx_hash")
+  action    String
+  amount    Decimal  @db.Decimal(18, 2)
+  payload   Json
+  createdAt DateTime @default(now()) @map("created_at")
+
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@index([projectId])
+  @@index([createdAt(sort: Desc)])
+  @@map("blockchain_records")
+}
+
+// ---------------------------------------------------------------------------
+// MODEL: IntegrityAudit
+// ---------------------------------------------------------------------------
+model IntegrityAudit {
+  id               String   @id @default(cuid())
+  projectId        String?  @map("project_id")
+  databaseAmount   Decimal  @db.Decimal(18, 2) @map("database_amount")
+  blockchainAmount Decimal  @db.Decimal(18, 2) @map("blockchain_amount")
+  difference       Decimal  @db.Decimal(18, 2)
+  status           String
+  notes            Json?
+  createdAt        DateTime @default(now()) @map("created_at")
+
+  project Project? @relation(fields: [projectId], references: [id], onDelete: SetNull)
+
+  @@index([projectId])
+  @@index([status])
+  @@index([createdAt(sort: Desc)])
+  @@map("integrity_audits")
+}
+
+// ---------------------------------------------------------------------------
+// MODEL: ImportLog
+// ---------------------------------------------------------------------------
+model ImportLog {
+  id             String       @id @default(cuid())
+  filename       String
+  importDate     DateTime     @default(now()) @map("import_date")
+  totalRecords   Int          @default(0) @map("total_records")
+  successCount   Int          @default(0) @map("success_count")
+  failedCount    Int          @default(0) @map("failed_count")
+  skippedCount   Int          @default(0) @map("skipped_count")
+  status         ImportStatus @default(Success)
+  errorDetails   Json?        @map("error_details")
+  importedBy     String?      @map("imported_by")
+  fileSizeBytes  BigInt?      @map("file_size_bytes")
+  checksumSha256 String?      @map("checksum_sha256")
+
+  importer User? @relation(fields: [importedBy], references: [id], onDelete: SetNull)
+
+  @@index([importDate(sort: Desc)])
+  @@index([status])
+  @@map("import_logs")
+}
+
+// ---------------------------------------------------------------------------
+// MODEL: Complaint
+// ---------------------------------------------------------------------------
+model Complaint {
+  id              String            @id @default(cuid())
+  projectId       String?           @map("project_id")
+  filedBy         String?           @map("filed_by")
+  assignedTo      String?           @map("assigned_to")
+  title           String
+  description     String
+  priority        ComplaintPriority @default(Medium)
+  status          ComplaintStatus   @default(Open)
+  resolutionNotes String?           @map("resolution_notes")
+  resolvedAt      DateTime?         @map("resolved_at")
+  createdAt       DateTime          @default(now()) @map("created_at")
+  updatedAt       DateTime          @updatedAt @map("updated_at")
+
+  project  Project? @relation(fields: [projectId], references: [id], onDelete: SetNull)
+  filer    User?    @relation("FiledBy",    fields: [filedBy],    references: [id], onDelete: SetNull)
+  assignee User?    @relation("AssignedTo", fields: [assignedTo], references: [id], onDelete: SetNull)
+
+  @@index([projectId])
+  @@index([filedBy])
+  @@index([status])
+  @@index([priority])
+  @@index([createdAt(sort: Desc)])
+  @@map("complaints")
+}

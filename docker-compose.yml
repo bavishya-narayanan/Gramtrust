@@ -1,0 +1,28 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: gramtrust
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    ports:
+      - "5432:5432"
+    volumes:
+      - gramtrust_pgdata:/var/lib/postgresql/data
+
+  backend:
+    build:
+      context: ./backend
+    env_file:
+      - ./backend/.env.example
+    environment:
+      DATABASE_URL: postgresql://postgres:postgres@postgres:5432/gramtrust?schema=public
+      CORS_ORIGIN: http://localhost:5173
+      PORT: 4000
+    depends_on:
+      - postgres
+    ports:
+      - "4000:4000"
+
+volumes:
+  gramtrust_pgdata:

@@ -1,0 +1,5 @@
+services:
+  blockchain-gateway:
+    image: node:20-alpine
+    working_dir: /app
+    command: ["sh", "-c", "node -e \"console.log('GramTrust blockchain network placeholder')\""]
