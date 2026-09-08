@@ -9,7 +9,7 @@ import { integrityReportRoutes } from './integrity-report.routes';
 import { authRoutes } from './auth.routes';
 import { tamperLogRoutes } from './tamper-log.routes';
 import { authenticate, requireRole } from '@/middlewares/auth.middleware';
-
+import { documentRoutes } from './document.routes';
 export const apiRoutes = Router();
 
 // ─── Public ───────────────────────────────────────────────────────────────────
@@ -18,10 +18,16 @@ apiRoutes.use('/auth', authRoutes);
 // ─── All routes below require authentication ──────────────────────────────────
 apiRoutes.use(authenticate);
 
+
 // CITIZEN + OFFICIAL + ADMIN: read-only access to projects, blockchain, verify, dashboard, and logs
 apiRoutes.use('/projects', requireRole('CITIZEN', 'OFFICIAL', 'ADMIN'), projectRoutes);
 apiRoutes.use('/blockchain', requireRole('CITIZEN', 'OFFICIAL', 'ADMIN'), blockchainRoutes);
 apiRoutes.use('/verify', requireRole('CITIZEN', 'OFFICIAL', 'ADMIN'), verifyRoutes);
+apiRoutes.use(
+  '/documents',
+  requireRole('CITIZEN', 'OFFICIAL', 'ADMIN'),
+  documentRoutes,
+);
 apiRoutes.use('/dashboard', requireRole('CITIZEN', 'OFFICIAL', 'ADMIN'), dashboardRoutes);
 apiRoutes.use('/tamper-logs', requireRole('CITIZEN', 'OFFICIAL', 'ADMIN'), tamperLogRoutes);
 

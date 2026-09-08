@@ -13,27 +13,30 @@ export interface JwtPayload {
 
 export const authService = {
   async login(email: string, password: string) {
-    // 1. Find user
     const user = await userRepository.findByEmail(email);
+
     if (!user) {
       throw new AppError('Invalid email or password', 401);
     }
 
-    // 2. Check active
     if (!user.isActive) {
-      throw new AppError('Account is disabled. Contact administrator.', 403);
+      throw new AppError(
+        'Account is disabled. Contact administrator.',
+        403,
+      );
     }
 
-    // 3. Verify password
-    const passwordMatch = await bcrypt.compare(password, user.passwordHash);
+    const passwordMatch = await bcrypt.compare(
+      password,
+      user.passwordHash,
+    );
+
     if (!passwordMatch) {
       throw new AppError('Invalid email or password', 401);
     }
 
-    // 4. Update last login
     await userRepository.updateLastLogin(user.id);
 
-    // 5. Sign JWT
     const payload: JwtPayload = {
       sub: user.id,
       name: user.name,
@@ -42,7 +45,8 @@ export const authService = {
     };
 
     const token = jwt.sign(payload, env.JWT_SECRET, {
-      expiresIn: env.JWT_EXPIRES_IN as jwt.SignOptions['expiresIn'],
+      expiresIn:
+        env.JWT_EXPIRES_IN as jwt.SignOptions['expiresIn'],
     });
 
     return {
@@ -58,9 +62,15 @@ export const authService = {
 
   verifyToken(token: string): JwtPayload {
     try {
-      return jwt.verify(token, env.JWT_SECRET) as JwtPayload;
+      return jwt.verify(
+        token,
+        env.JWT_SECRET,
+      ) as JwtPayload;
     } catch {
-      throw new AppError('Invalid or expired token', 401);
+      throw new AppError(
+        'Invalid or expired token',
+        401,
+      );
     }
   },
 };
