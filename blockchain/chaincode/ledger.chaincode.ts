@@ -1,9 +1,9 @@
-import { Contract } from 'fabric-contract-api';
+﻿import { Contract } from 'fabric-contract-api';
 import type { Context } from 'fabric-contract-api';
 
 export interface LedgerChaincodeTransaction {
   projectCode: string;
-  action: 'IMPORT' | 'STORE' | 'VERIFY' | 'UPDATE' | 'CREATE';
+  action: string;
   amount: number;
   hash: string;
   timestamp: string;
@@ -11,7 +11,33 @@ export interface LedgerChaincodeTransaction {
   createdBy: string;
 }
 
+export interface ProcurementBlockchainEvent {
+  tenderId: string;
+  eventType:
+    | 'TENDER_IMPORTED'
+    | 'TENDER_CREATED'
+    | 'TENDER_PUBLISHED'
+    | 'BID_IMPORTED'
+    | 'BID_SUBMITTED'
+    | 'BID_MODIFIED'
+    | 'TENDER_EVALUATED'
+    | 'TENDER_AWARDED'
+    | 'CONTRACT_CREATED'
+    | 'PAYMENT_RECORDED'
+    | 'OFFICIAL_CORRECTION';
+  recordId: string;
+  version: number;
+  hash: string;
+  actor: string;
+  timestamp: string;
+  txId: string;
+  metadata?: Record<string, unknown>;
+}
+
 export class LedgerContract extends Contract {
+  /**
+   * Existing Project Fund Ledger Record
+   */
   async CreateRecord(
     ctx: Context,
     projectCode: string,
@@ -66,6 +92,61 @@ export class LedgerContract extends Contract {
     }
 
     return JSON.stringify(records);
+  }
+
+  /**
+   * Procurement & Tender Blockchain Anchoring
+   */
+  async AnchorProcurementEvent(
+    ctx: Context,
+    tenderId: string,
+    eventType: string,
+    recordId: string,
+    version: string,
+    hash: string,
+    actor: string,
+    timestamp: string,
+    metadataJson?: string
+  ): Promise<string> {
+    if (!tenderId || !eventType || !hash || !timestamp) {
+      throw new Error('tenderId, eventType, hash, and timestamp are required for procurement anchoring');
+    }
+
+    const txId = ctx.stub.getTxID();
+    const event: ProcurementBlockchainEvent = {
+      tenderId,
+      eventType: eventType as ProcurementBlockchainEvent['eventType'],
+      recordId: recordId || tenderId,
+      version: parseInt(version, 10) || 1,
+      hash,
+      actor: actor || ctx.clientIdentity.getID(),
+      timestamp,
+      txId,
+      metadata: metadataJson ? JSON.parse(metadataJson) : {},
+    };
+
+    const key = ctx.stub.createCompositeKey('tender_event', [tenderId, String(event.version), txId]);
+    await ctx.stub.putState(key, Buffer.from(JSON.stringify(event)));
+    return JSON.stringify(event);
+  }
+
+  async GetTenderHistory(ctx: Context, tenderId: string): Promise<string> {
+    const iterator = await ctx.stub.getStateByPartialCompositeKey('tender_event', [tenderId]);
+    const events: ProcurementBlockchainEvent[] = [];
+
+    try {
+      let result = await iterator.next();
+      while (!result.done) {
+        if (result.value?.value) {
+          events.push(JSON.parse(result.value.value.toString()) as ProcurementBlockchainEvent);
+        }
+        result = await iterator.next();
+      }
+    } finally {
+      await iterator.close();
+    }
+
+    return JSON.stringify(events);
   }
 }
 

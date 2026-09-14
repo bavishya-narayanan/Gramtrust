@@ -21,6 +21,12 @@ export const actionsController = {
     res.status(201).json({ message: 'Tampering simulated', data: tampered });
   }),
 
+  simulateTenderTampering: asyncHandler(async (req: Request, res: Response) => {
+    const tenderId = req.body?.tenderId || req.query?.tenderId ? String(req.body?.tenderId || req.query?.tenderId) : undefined;
+    const result = await blockchainService.simulateTenderTampering(tenderId);
+    res.status(201).json({ success: true, message: result.message, data: result });
+  }),
+
   verifyBlockchain: asyncHandler(async (_req: Request, res: Response) => {
     const result = await verifyService.verifyAll();
     res.json({ message: 'Verification completed', data: result, count: result.length });

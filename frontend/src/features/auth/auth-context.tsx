@@ -2,7 +2,7 @@ import React, { createContext, useContext, useState, useCallback, useEffect } fr
 import { jwtDecode } from 'jwt-decode';
 import { apiClient } from '@/lib/api-client';
 
-export type UserRole = 'ADMIN' | 'OFFICIAL' | 'CITIZEN';
+export type UserRole = 'ADMIN' | 'OFFICIAL' | 'CITIZEN' | 'AUDITOR';
 
 export interface AuthUser {
   id: string;

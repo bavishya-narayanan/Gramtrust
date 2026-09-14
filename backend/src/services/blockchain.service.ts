@@ -158,4 +158,56 @@ export const blockchainService = {
       lastUpdatedAt: new Date().toISOString(),
     };
   },
+
+  async simulateTenderTampering(tenderId?: string) {
+    const { prisma } = await import('@/config/prisma.js');
+    const { verifyService } = await import('@/services/verify.service.js');
+
+    // Find tender with bids
+    let tender = tenderId
+      ? await prisma.tender.findFirst({
+          where: { OR: [{ tenderId }, { id: tenderId }] },
+          include: { bids: true },
+        })
+      : await prisma.tender.findFirst({
+          where: { bids: { some: {} } },
+          include: { bids: true },
+          orderBy: { tenderId: 'desc' },
+        });
+
+    if (!tender || tender.bids.length === 0) {
+      throw new AppError('No tender with bids found for tamper simulation', 404);
+    }
+
+    // Pick first bid
+    const bid = tender.bids[0]!;
+    const originalAmount = Number(bid.bidAmount);
+    const tamperedAmount = originalAmount + 500000;
+
+    // Directly alter bid in Postgres DB WITHOUT updating currentHash or creating version
+    await pool.query(
+      `UPDATE bids SET bid_amount = $1, updated_at = NOW() WHERE id = $2`,
+      [tamperedAmount, bid.id],
+    );
+
+    // Also mark tender as Tampered in DB
+    await pool.query(
+      `UPDATE tenders SET blockchain_status = 'Tampered', updated_at = NOW() WHERE id = $1`,
+      [tender.id],
+    );
+
+    // Immediately run verifyTender so it detects the mismatch and creates a TAMPERED log
+    const verifyReport = await verifyService.verifyTender(tender.id);
+
+    return {
+      tenderId: tender.tenderId,
+      vendorName: bid.vendorName,
+      bidId: bid.id,
+      originalAmount,
+      tamperedAmount,
+      status: 'TAMPERED',
+      message: `Tender ${tender.tenderId} was tampered with through vendor ${bid.vendorName}. The bid associated with this vendor has been detected as tampered.`,
+      verifyReport,
+    };
+  },
 };

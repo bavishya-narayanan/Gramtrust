@@ -1,63 +1,31 @@
 import { useState, useMemo } from 'react';
-import { useQuery } from '@tanstack/react-query';
-import { ArrowPathIcon, ExclamationTriangleIcon, ShieldCheckIcon } from '@heroicons/react/24/outline';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { Link } from 'react-router-dom';
+import {
+  ArrowPathIcon,
+  ExclamationTriangleIcon,
+  ShieldCheckIcon,
+  MagnifyingGlassIcon,
+  CheckBadgeIcon,
+  BeakerIcon,
+} from '@heroicons/react/24/outline';
 import { PageHeader } from '@/components/layout/page-header';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { apiClient, fetcher } from '@/lib/api-client';
-import { formatCurrency, formatDateTime } from '@/lib/utils';
-import type { LedgerProject } from '@/types/ledger';
-
-interface TamperLog {
-  id: string;
-  recordId: string;
-  userId: string | null;
-  userName: string;
-  userRole: string;
-  fieldName: string;
-  oldValue: string | null;
-  newValue: string | null;
-  changeType: 'UPDATE' | 'UNAUTHORIZED_UPDATE' | 'DIRECT_DATABASE_CHANGE' | 'BLOCKCHAIN_MISMATCH';
-  status: 'AUTHORIZED' | 'BLOCKED' | 'DETECTED';
-  timestamp: string;
-}
+import { apiClient } from '@/lib/api-client';
+import { formatDateTime } from '@/lib/utils';
+import type { TamperLog } from '@/types/tender';
 
 export function TamperLogsPage() {
-  const [filterUser, setFilterUser] = useState('');
-  const [filterRole, setFilterRole] = useState('ALL');
-  const [filterType, setFilterType] = useState('ALL');
+  const queryClient = useQueryClient();
+  const [searchQuery, setSearchQuery] = useState('');
   const [filterStatus, setFilterStatus] = useState('ALL');
-  const [filterDistrict, setFilterDistrict] = useState('ALL');
   const [filterDate, setFilterDate] = useState('');
+  const [simulationMessage, setSimulationMessage] = useState<string | null>(null);
 
-  // 1. Fetch Projects to map code -> district
-  const { data: projects = [] } = useQuery<LedgerProject[]>({
-    queryKey: ['projects'],
-    queryFn: () => fetcher<LedgerProject[]>('/projects'),
-  });
-
-  // Unique list of districts for the dropdown
-  const districts = useMemo(() => {
-    const d = new Set<string>();
-    projects.forEach((p) => {
-      if (p.district) d.add(p.district);
-    });
-    return Array.from(d).sort();
-  }, [projects]);
-
-  // Project map for quick lookup
-  const projectMap = useMemo(() => {
-    const map = new Map<string, LedgerProject>();
-    projects.forEach((p) => {
-      map.set(p.code, p);
-    });
-    return map;
-  }, [projects]);
-
-  // 2. Fetch Tamper Logs
+  // 1. Fetch Tamper Logs
   const { data: logs = [], refetch, isFetching } = useQuery<TamperLog[]>({
     queryKey: ['tamper-logs'],
     queryFn: async () => {
@@ -66,31 +34,46 @@ export function TamperLogsPage() {
     },
   });
 
-  // Client-side filtering
+  // 2. Simulate Tampering Mutation (e.g., on Tender T705)
+  const simulateMutation = useMutation({
+    mutationFn: async (tenderId?: string) => {
+      const { data } = await apiClient.post<{ message: string; data: any }>(
+        '/actions/simulate-tender-tampering',
+        { tenderId }
+      );
+      return data;
+    },
+    onSuccess: (data) => {
+      setSimulationMessage(data.message || 'Tampering simulated successfully.');
+      queryClient.invalidateQueries({ queryKey: ['tamper-logs'] });
+      queryClient.invalidateQueries({ queryKey: ['tenders'] });
+      refetch();
+    },
+    onError: (err: any) => {
+      setSimulationMessage(`Simulation failed: ${err?.response?.data?.message || err.message}`);
+    },
+  });
+
+  // Filtering
   const filteredLogs = useMemo(() => {
     return logs.filter((log) => {
-      // Filter by User Name / ID
-      if (filterUser) {
-        const query = filterUser.toLowerCase();
-        const matchesUser =
-          log.userName.toLowerCase().includes(query) ||
-          (log.userId && log.userId.toLowerCase().includes(query));
-        if (!matchesUser) return false;
-      }
-
-      // Filter by Role
-      if (filterRole !== 'ALL' && log.userRole !== filterRole) {
-        return false;
-      }
-
-      // Filter by Change Type
-      if (filterType !== 'ALL' && log.changeType !== filterType) {
-        return false;
+      // Search by Tender ID, Vendor, or Record ID
+      if (searchQuery) {
+        const q = searchQuery.toLowerCase();
+        const matchTender = log.tenderId?.toLowerCase().includes(q);
+        const matchVendor = log.vendorName?.toLowerCase().includes(q);
+        const matchRecord = log.recordId?.toLowerCase().includes(q);
+        const matchUser = log.userName?.toLowerCase().includes(q);
+        if (!matchTender && !matchVendor && !matchRecord && !matchUser) return false;
       }
 
       // Filter by Status
-      if (filterStatus !== 'ALL' && log.status !== filterStatus) {
-        return false;
+      if (filterStatus !== 'ALL') {
+        if (filterStatus === 'TAMPERED') {
+          if (log.status !== 'TAMPERED' && log.status !== 'DETECTED') return false;
+        } else if (log.status !== filterStatus) {
+          return false;
+        }
       }
 
       // Filter by Date
@@ -99,75 +82,135 @@ export function TamperLogsPage() {
         if (logDate !== filterDate) return false;
       }
 
-      // Filter by District (lookup project using recordId as code)
-      if (filterDistrict !== 'ALL') {
-        const proj = projectMap.get(log.recordId);
-        if (!proj || proj.district !== filterDistrict) return false;
-      }
-
       return true;
     });
-  }, [logs, filterUser, filterRole, filterType, filterStatus, filterDate, filterDistrict, projectMap]);
+  }, [logs, searchQuery, filterStatus, filterDate]);
+
+  const tamperedCount = logs.filter(
+    (l) => l.status === 'TAMPERED' || l.status === 'DETECTED'
+  ).length;
 
   return (
     <div className="space-y-8">
-      <div className="flex items-center justify-between">
+      {/* Header */}
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <PageHeader
           eyebrow="Security & Audit Trail"
-          title="Tamper & Change Logs"
-          description="Immutable record of all database updates, unauthorized attempts, and integrity violations."
+          title="Tamper Logs"
+          description="Immutable record of detected database alterations and vendor integrity violations."
         />
-        <Button onClick={() => refetch()} disabled={isFetching} variant="outline" className="flex items-center gap-2">
-          <ArrowPathIcon className={`h-4 w-4 ${isFetching ? 'animate-spin' : ''}`} />
-          Refresh Logs
-        </Button>
+        <div className="flex items-center gap-2">
+          <Button
+            onClick={() => simulateMutation.mutate('T705')}
+            disabled={simulateMutation.isPending}
+            variant="outline"
+            className="flex items-center gap-1.5 border-rose-200 bg-rose-50/50 text-rose-700 hover:bg-rose-100 hover:text-rose-800"
+          >
+            <BeakerIcon className="h-4 w-4" />
+            {simulateMutation.isPending ? 'Simulating...' : 'Simulate Tender Tampering (T705)'}
+          </Button>
+          <Button
+            onClick={() => refetch()}
+            disabled={isFetching}
+            variant="outline"
+            className="flex items-center gap-1.5"
+          >
+            <ArrowPathIcon className={`h-4 w-4 ${isFetching ? 'animate-spin' : ''}`} />
+            Refresh
+          </Button>
+        </div>
+      </div>
+
+      {/* Simulation Banner */}
+      {simulationMessage && (
+        <div className="rounded-2xl border border-rose-200 bg-rose-50 p-4 text-xs font-semibold text-rose-800 flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <ExclamationTriangleIcon className="h-5 w-5 text-rose-600 shrink-0" />
+            <span>{simulationMessage}</span>
+          </div>
+          <button
+            onClick={() => setSimulationMessage(null)}
+            className="text-rose-600 hover:text-rose-900 underline ml-4"
+          >
+            Dismiss
+          </button>
+        </div>
+      )}
+
+      {/* Overview Stat Cards */}
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+        <Card className="border-slate-200 shadow-soft">
+          <CardContent className="p-5">
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-semibold uppercase tracking-wider text-slate-500">
+                Total Logs
+              </span>
+              <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-slate-100 text-slate-600">
+                <ShieldCheckIcon className="h-4 w-4" />
+              </span>
+            </div>
+            <div className="mt-3 text-2xl font-bold text-slate-900">{logs.length}</div>
+            <p className="mt-1 text-xs text-slate-500">All registered change events</p>
+          </CardContent>
+        </Card>
+
+        <Card className="border-rose-200 bg-rose-50/30 shadow-soft">
+          <CardContent className="p-5">
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-semibold uppercase tracking-wider text-rose-600">
+                Tampered Incidents
+              </span>
+              <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-rose-100 text-rose-600">
+                <ExclamationTriangleIcon className="h-4 w-4" />
+              </span>
+            </div>
+            <div className="mt-3 text-2xl font-bold text-rose-700">{tamperedCount}</div>
+            <p className="mt-1 text-xs text-rose-600 font-medium">
+              Database alterations detected
+            </p>
+          </CardContent>
+        </Card>
+
+        <Card className="border-emerald-200 bg-emerald-50/30 shadow-soft">
+          <CardContent className="p-5">
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-semibold uppercase tracking-wider text-emerald-600">
+                Authorized Changes
+              </span>
+              <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-emerald-100 text-emerald-600">
+                <CheckBadgeIcon className="h-4 w-4" />
+              </span>
+            </div>
+            <div className="mt-3 text-2xl font-bold text-emerald-700">
+              {logs.filter((l) => l.status === 'AUTHORIZED').length}
+            </div>
+            <p className="mt-1 text-xs text-emerald-600">Legitimate version modifications</p>
+          </CardContent>
+        </Card>
       </div>
 
       {/* Filters Card */}
       <Card className="border-slate-200 shadow-soft">
-        <CardHeader className="pb-4">
-          <CardTitle className="text-sm font-semibold uppercase tracking-wider text-slate-500">Filter Audit Logs</CardTitle>
+        <CardHeader className="pb-3">
+          <CardTitle className="text-xs font-semibold uppercase tracking-wider text-slate-500">
+            Filter Tamper Records
+          </CardTitle>
         </CardHeader>
         <CardContent>
-          <div className="grid gap-4 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-6">
+          <div className="grid gap-4 sm:grid-cols-2 md:grid-cols-3">
             <div>
-              <label className="block text-xs font-semibold text-slate-600 mb-1">User / Email</label>
-              <Input
-                placeholder="Search user..."
-                value={filterUser}
-                onChange={(e) => setFilterUser(e.target.value)}
-                className="text-xs"
-              />
-            </div>
-
-            <div>
-              <label className="block text-xs font-semibold text-slate-600 mb-1">Role</label>
-              <select
-                value={filterRole}
-                onChange={(e) => setFilterRole(e.target.value)}
-                className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-xs text-slate-700 shadow-sm focus:border-blue-500 focus:outline-none"
-              >
-                <option value="ALL">All Roles</option>
-                <option value="ADMIN">Admin</option>
-                <option value="OFFICIAL">Official</option>
-                <option value="CITIZEN">Citizen</option>
-                <option value="UNKNOWN">Unknown</option>
-              </select>
-            </div>
-
-            <div>
-              <label className="block text-xs font-semibold text-slate-600 mb-1">Change Type</label>
-              <select
-                value={filterType}
-                onChange={(e) => setFilterType(e.target.value)}
-                className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-xs text-slate-700 shadow-sm focus:border-blue-500 focus:outline-none"
-              >
-                <option value="ALL">All Types</option>
-                <option value="UPDATE">Update</option>
-                <option value="UNAUTHORIZED_UPDATE">Unauthorized</option>
-                <option value="DIRECT_DATABASE_CHANGE">Direct DB Write</option>
-                <option value="BLOCKCHAIN_MISMATCH">BC Mismatch</option>
-              </select>
+              <label className="block text-xs font-semibold text-slate-600 mb-1">
+                Tender ID / Vendor
+              </label>
+              <div className="relative">
+                <MagnifyingGlassIcon className="absolute left-3 top-2.5 h-4 w-4 text-slate-400" />
+                <Input
+                  placeholder="e.g. T705 or Karnataka Builders"
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  className="pl-9 text-xs"
+                />
+              </div>
             </div>
 
             <div>
@@ -178,30 +221,14 @@ export function TamperLogsPage() {
                 className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-xs text-slate-700 shadow-sm focus:border-blue-500 focus:outline-none"
               >
                 <option value="ALL">All Statuses</option>
+                <option value="TAMPERED">⚠ Tampered / Detected</option>
                 <option value="AUTHORIZED">Authorized</option>
                 <option value="BLOCKED">Blocked</option>
-                <option value="DETECTED">Detected</option>
               </select>
             </div>
 
             <div>
-              <label className="block text-xs font-semibold text-slate-600 mb-1">District</label>
-              <select
-                value={filterDistrict}
-                onChange={(e) => setFilterDistrict(e.target.value)}
-                className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-xs text-slate-700 shadow-sm focus:border-blue-500 focus:outline-none"
-              >
-                <option value="ALL">All Districts</option>
-                {districts.map((d) => (
-                  <option key={d} value={d}>
-                    {d}
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            <div>
-              <label className="block text-xs font-semibold text-slate-600 mb-1">Date</label>
+              <label className="block text-xs font-semibold text-slate-600 mb-1">Detection Date</label>
               <Input
                 type="date"
                 value={filterDate}
@@ -213,89 +240,127 @@ export function TamperLogsPage() {
         </CardContent>
       </Card>
 
-      {/* Logs Table */}
-      <Card className="border-slate-200 shadow-soft">
+      {/* Tamper Logs Table */}
+      <Card className="border-slate-200 shadow-soft overflow-hidden">
         <CardContent className="p-0">
           <Table>
             <TableHeader className="bg-slate-50">
               <TableRow>
-                <TableHead className="w-[180px]">Timestamp</TableHead>
-                <TableHead>Record (Code)</TableHead>
-                <TableHead>User / Identity</TableHead>
-                <TableHead className="w-[100px]">Role</TableHead>
-                <TableHead className="w-[100px]">Field</TableHead>
-                <TableHead className="text-right">Old Value</TableHead>
-                <TableHead className="text-right">New Value</TableHead>
-                <TableHead>Change Type</TableHead>
-                <TableHead>Status</TableHead>
+                <TableHead className="w-[140px]">Tender ID</TableHead>
+                <TableHead className="min-w-[200px]">Vendor</TableHead>
+                <TableHead className="w-[150px]">Status</TableHead>
+                <TableHead className="w-[180px]">Detected At</TableHead>
+                <TableHead>Incident Details</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {filteredLogs.length > 0 ? (
                 filteredLogs.map((log) => {
-                  const proj = projectMap.get(log.recordId);
-                  const isAmount = log.fieldName === 'amount';
-
-                  let statusVariant: 'default' | 'secondary' | 'outline' | 'destructive' = 'default';
-                  if (log.status === 'AUTHORIZED') statusVariant = 'default'; // blue/green style
-                  else if (log.status === 'BLOCKED') statusVariant = 'outline'; // amber border style
-                  else statusVariant = 'destructive'; // red style
+                  const isTampered =
+                    log.status === 'TAMPERED' || log.status === 'DETECTED';
+                  const tenderId = log.tenderId || (log.recordId.startsWith('T') ? log.recordId : null);
+                  const vendorName = log.vendorName || 'Not specified';
 
                   return (
-                    <TableRow key={log.id} className="hover:bg-slate-50/50">
-                      <TableCell className="font-mono text-[11px] text-slate-500">
+                    <TableRow
+                      key={log.id}
+                      className={
+                        isTampered
+                          ? 'bg-rose-50/40 hover:bg-rose-50/70 border-l-4 border-l-rose-500 transition-colors'
+                          : 'hover:bg-slate-50/50 transition-colors'
+                      }
+                    >
+                      {/* Tender ID */}
+                      <TableCell>
+                        {tenderId ? (
+                          <Link
+                            to={`/tenders/${tenderId}`}
+                            className="inline-flex items-center gap-1 font-mono font-bold text-sm text-blue-600 hover:text-blue-800 hover:underline"
+                          >
+                            {tenderId}
+                          </Link>
+                        ) : (
+                          <span className="font-mono text-xs font-semibold text-slate-700">
+                            {log.recordId}
+                          </span>
+                        )}
+                      </TableCell>
+
+                      {/* Vendor */}
+                      <TableCell>
+                        <div className="font-semibold text-slate-900">
+                          {vendorName}
+                        </div>
+                        {isTampered && (
+                          <p className="text-[11px] text-rose-600 mt-0.5">
+                            Bid associated with this vendor altered
+                          </p>
+                        )}
+                      </TableCell>
+
+                      {/* Status */}
+                      <TableCell>
+                        {isTampered ? (
+                          <span className="inline-flex items-center gap-1.5 rounded-lg bg-rose-100 px-3 py-1 text-xs font-extrabold text-rose-800 border border-rose-300">
+                            <ExclamationTriangleIcon className="h-4 w-4 text-rose-600" />
+                            ⚠ TAMPERED
+                          </span>
+                        ) : log.status === 'AUTHORIZED' ? (
+                          <span className="inline-flex items-center gap-1 rounded-md bg-emerald-100 px-2.5 py-0.5 text-xs font-bold text-emerald-800">
+                            ✓ Authorized
+                          </span>
+                        ) : (
+                          <span className="inline-flex items-center rounded-md bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-700">
+                            {log.status}
+                          </span>
+                        )}
+                      </TableCell>
+
+                      {/* Detected At */}
+                      <TableCell className="font-mono text-xs text-slate-600">
                         {formatDateTime(log.timestamp)}
                       </TableCell>
+
+                      {/* Incident Details */}
                       <TableCell>
-                        <div className="font-medium text-slate-900">{log.recordId}</div>
-                        {proj && <div className="text-[10px] text-slate-500">{proj.name} ({proj.district})</div>}
-                      </TableCell>
-                      <TableCell>
-                        <div className="font-medium text-slate-950">{log.userName}</div>
-                        {log.userId && <div className="text-[10px] text-slate-400 font-mono">ID: {log.userId}</div>}
-                      </TableCell>
-                      <TableCell>
-                        <Badge variant="outline" className="text-[10px] font-semibold uppercase">
-                          {log.userRole}
-                        </Badge>
-                      </TableCell>
-                      <TableCell className="font-mono text-xs text-slate-700">{log.fieldName}</TableCell>
-                      <TableCell className="text-right font-mono text-xs text-slate-600">
-                        {isAmount && log.oldValue ? formatCurrency(Number(log.oldValue)) : log.oldValue ?? '—'}
-                      </TableCell>
-                      <TableCell className="text-right font-mono text-xs font-semibold text-slate-900">
-                        {isAmount && log.newValue ? formatCurrency(Number(log.newValue)) : log.newValue ?? '—'}
-                      </TableCell>
-                      <TableCell>
-                        <span className={`inline-flex items-center rounded-md px-2 py-1 text-[10px] font-medium border ${
-                          log.changeType === 'UPDATE'
-                            ? 'bg-blue-50 text-blue-700 border-blue-100'
-                            : log.changeType === 'UNAUTHORIZED_UPDATE'
-                            ? 'bg-amber-50 text-amber-700 border-amber-100'
-                            : 'bg-red-50 text-red-700 border-red-100'
-                        }`}>
-                          {log.changeType}
-                        </span>
-                      </TableCell>
-                      <TableCell>
-                        <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-semibold border ${
-                          log.status === 'AUTHORIZED'
-                            ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
-                            : log.status === 'BLOCKED'
-                            ? 'bg-amber-50 text-amber-700 border-amber-200'
-                            : 'bg-red-50 text-red-700 border-red-200'
-                        }`}>
-                          {log.status}
-                        </span>
+                        {isTampered ? (
+                          <div className="text-xs text-slate-800">
+                            <span className="font-semibold text-rose-700">Database Tampering: </span>
+                            {log.oldValue && log.newValue ? (
+                              <span>
+                                Bid amount modified in DB from{' '}
+                                <span className="font-bold text-slate-900">
+                                  ₹{Number(log.oldValue).toLocaleString('en-IN')}
+                                </span>{' '}
+                                to{' '}
+                                <span className="font-bold text-rose-700">
+                                  ₹{Number(log.newValue).toLocaleString('en-IN')}
+                                </span>
+                              </span>
+                            ) : (
+                              <span>Direct unauthorized database modification detected</span>
+                            )}
+                          </div>
+                        ) : (
+                          <div className="text-xs text-slate-600">
+                            <span className="font-medium text-slate-800">{log.fieldName}: </span>
+                            {log.oldValue || '—'} → {log.newValue || '—'}
+                          </div>
+                        )}
                       </TableCell>
                     </TableRow>
                   );
                 })
               ) : (
                 <TableRow>
-                  <TableCell colSpan={9} className="text-center py-12 text-slate-500">
-                    <ExclamationTriangleIcon className="mx-auto h-8 w-8 text-slate-400 mb-2" />
-                    No tamper logs found matching current filters.
+                  <TableCell colSpan={5} className="py-12 text-center text-sm text-slate-500">
+                    <div className="flex flex-col items-center justify-center">
+                      <ShieldCheckIcon className="h-10 w-10 text-slate-300 mb-2" />
+                      <p className="font-semibold text-slate-700">No tamper logs found</p>
+                      <p className="text-xs text-slate-400 mt-1">
+                        Try clearing filters or click &ldquo;Simulate Tender Tampering&rdquo; to test detection.
+                      </p>
+                    </div>
                   </TableCell>
                 </TableRow>
               )}
@@ -306,4 +371,5 @@ export function TamperLogsPage() {
     </div>
   );
 }
+
 export default TamperLogsPage;

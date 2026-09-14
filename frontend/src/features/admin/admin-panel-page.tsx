@@ -1,4 +1,4 @@
-import { useMemo, useState, type ReactNode } from 'react';
+import { useState, type ReactNode } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { ArrowPathIcon, CloudArrowUpIcon, ShieldCheckIcon, ExclamationTriangleIcon } from '@heroicons/react/24/outline';
 import { PageHeader } from '@/components/layout/page-header';
@@ -8,25 +8,15 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { apiClient, fetcher } from '@/lib/api-client';
 import { formatCurrency, formatDateTime } from '@/lib/utils';
 import { getIntegrityBadgeVariant, getTransactionBadgeVariant } from '@/lib/status';
-import type { DashboardSummary, LedgerProject, LedgerState, LedgerTransaction } from '@/types/ledger';
+import type { DashboardSummary, LedgerProject } from '@/types/ledger';
 
 export function AdminPanelPage() {
   const queryClient = useQueryClient();
   const [message, setMessage] = useState('Use these controls to manage the local ledger simulation.');
 
-  const { data: projects = [] } = useQuery<LedgerProject[]>({
-    queryKey: ['projects'],
-    queryFn: () => fetcher<LedgerProject[]>('/projects'),
-  });
   const { data: dashboard } = useQuery<DashboardSummary>({
     queryKey: ['dashboard'],
     queryFn: () => fetcher<DashboardSummary>('/dashboard'),
-  });
-  const firstProjectId = useMemo(() => projects[0]?.id, [projects]);
-  const { data: transactions = [] } = useQuery<LedgerTransaction[]>({
-    queryKey: ['transactions', firstProjectId],
-    queryFn: () => fetcher<LedgerTransaction[]>(`/projects/${firstProjectId}/transactions`),
-    enabled: Boolean(firstProjectId),
   });
 
   const handleSuccess = async (feedback: string) => {

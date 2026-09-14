@@ -1,3 +1,7 @@
+// =============================================================================
+// GramTrust - Prisma Schema
+// =============================================================================
+
 generator client {
   provider = "prisma-client-js"
 }
@@ -7,164 +11,14 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
-model User {
-  name               String
-  email              String      @unique
-  passwordHash       String      @map("password_hash")
-  role               UserRole    @default(CITIZEN)
-  district           String?
-  state              String?
-  isActive           Boolean     @default(true) @map("is_active")
-  lastLoginAt        DateTime?   @map("last_login_at")
-  createdAt          DateTime    @default(now()) @map("created_at")
-  updatedAt          DateTime    @updatedAt @map("updated_at")
-  id                 String      @id @default(cuid())
-  assignedComplaints Complaint[] @relation("AssignedTo")
-  filedComplaints    Complaint[] @relation("FiledBy")
-  importLogs         ImportLog[]
-
-  @@index([role])
-  @@index([district])
-  @@index([state])
-  @@map("users")
-}
-
-model Project {
-  district         String
-  state            String
-  amount           Decimal            @db.Decimal(18, 2)
-  blockchainHash   String?            @map("blockchain_hash")
-  createdAt        DateTime           @default(now()) @map("created_at")
-  updatedAt        DateTime           @updatedAt @map("updated_at")
-  code             String             @unique
-  financialYear    String
-  id               String             @id @default(cuid())
-  name             String
-  status           String
-  blockchainStatus String             @default("Pending") @map("blockchain_status")
-  integrityStatus  String             @default("Review Required") @map("integrity_status")
-  records          BlockchainRecord[]
-  complaints       Complaint[]
-  audits           IntegrityAudit[]
-
-  @@index([state])
-  @@index([district])
-  @@index([financialYear])
-  @@index([status])
-  @@index([blockchainStatus])
-  @@index([integrityStatus])
-  @@index([district], map: "idx_projects_district")
-  @@index([state], map: "idx_projects_state")
-  @@index([status], map: "idx_projects_status")
-  @@map("projects")
-}
-
-model BlockchainRecord {
-  id        String   @id @default(cuid())
-  projectId String   @map("project_id")
-  txHash    String   @unique @map("tx_hash")
-  action    String
-  amount    Decimal  @db.Decimal(18, 2)
-  payload   Json
-  createdAt DateTime @default(now()) @map("created_at")
-  project   Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
-
-  @@index([projectId])
-  @@index([createdAt(sort: Desc)])
-  @@index([projectId], map: "idx_blockchain_project")
-  @@map("blockchain_records")
-}
-
-model IntegrityAudit {
-  projectId        String?  @map("project_id")
-  databaseAmount   Decimal  @map("database_amount") @db.Decimal(18, 2)
-  blockchainAmount Decimal  @map("blockchain_amount") @db.Decimal(18, 2)
-  notes            Json?
-  createdAt        DateTime @default(now()) @map("created_at")
-  difference       Decimal  @db.Decimal(18, 2)
-  id               String   @id @default(cuid())
-  status           String
-  project          Project? @relation(fields: [projectId], references: [id])
-
-  @@index([projectId])
-  @@index([status])
-  @@index([createdAt(sort: Desc)])
-  @@index([projectId], map: "idx_audit_project")
-  @@map("integrity_audits")
-}
-
-model ImportLog {
-  filename       String
-  importDate     DateTime     @default(now()) @map("import_date")
-  totalRecords   Int          @default(0) @map("total_records")
-  successCount   Int          @default(0) @map("success_count")
-  failedCount    Int          @default(0) @map("failed_count")
-  skippedCount   Int          @default(0) @map("skipped_count")
-  status         ImportStatus @default(Success)
-  errorDetails   Json?        @map("error_details")
-  importedBy     String?      @map("imported_by")
-  fileSizeBytes  BigInt?      @map("file_size_bytes")
-  checksumSha256 String?      @map("checksum_sha256")
-  id             String       @id @default(cuid())
-  importer       User?        @relation(fields: [importedBy], references: [id])
-
-  @@index([importDate(sort: Desc)])
-  @@index([status])
-  @@map("import_logs")
-}
-
-model Complaint {
-  projectId       String?           @map("project_id")
-  filedBy         String?           @map("filed_by")
-  assignedTo      String?           @map("assigned_to")
-  title           String
-  description     String
-  priority        ComplaintPriority @default(Medium)
-  status          ComplaintStatus   @default(Open)
-  resolutionNotes String?           @map("resolution_notes")
-  resolvedAt      DateTime?         @map("resolved_at")
-  createdAt       DateTime          @default(now()) @map("created_at")
-  updatedAt       DateTime          @updatedAt @map("updated_at")
-  id              String            @id @default(cuid())
-  assignee        User?             @relation("AssignedTo", fields: [assignedTo], references: [id])
-  filer           User?             @relation("FiledBy", fields: [filedBy], references: [id])
-  project         Project?          @relation(fields: [projectId], references: [id])
-
-  @@index([projectId])
-  @@index([filedBy])
-  @@index([status])
-  @@index([priority])
-  @@index([createdAt(sort: Desc)])
-  @@index([projectId], map: "idx_complaints_project")
-  @@map("complaints")
-}
-
-model document_records {
-  id                  String    @id @db.VarChar(50)
-  project_id          String?   @db.VarChar(50)
-  document_name       String    @db.VarChar(255)
-  document_type       String    @db.VarChar(100)
-  file_path           String?
-  sha256_hash         String    @db.VarChar(64)
-  amount              Decimal?  @db.Decimal(18, 5)
-  blockchain_hash     String?   @db.VarChar(64)
-  blockchain_tx_id    String?   @db.VarChar(255)
-  blockchain_status   String?   @default("PENDING") @db.VarChar(50)
-  source_dataset      String?   @db.VarChar(255)
-  verification_status String?   @default("PENDING") @db.VarChar(50)
-  is_tampered         Boolean?  @default(false)
-  uploaded_by         String?   @db.VarChar(50)
-  created_at          DateTime? @default(now()) @db.Timestamp(6)
-  verified_at         DateTime? @db.Timestamp(6)
-
-  @@index([sha256_hash], map: "idx_document_records_hash")
-  @@index([project_id], map: "idx_document_records_project")
-  @@index([verification_status], map: "idx_documents_verification")
-}
+// ---------------------------------------------------------------------------
+// ENUMS
+// ---------------------------------------------------------------------------
 
 enum UserRole {
   ADMIN
   OFFICIAL
+  AUDITOR
   CITIZEN
 }
 
@@ -187,4 +41,461 @@ enum ComplaintPriority {
   Medium
   High
   Critical
+}
+
+// ---------------------------------------------------------------------------
+// MODEL: User
+// ---------------------------------------------------------------------------
+model User {
+  id          String    @id @default(cuid())
+  name        String
+  email       String    @unique
+  passwordHash String   @map("password_hash")
+  role        UserRole  @default(CITIZEN)
+  district    String?
+  state       String?
+  isActive    Boolean   @default(true) @map("is_active")
+  lastLoginAt DateTime? @map("last_login_at")
+  createdAt   DateTime  @default(now()) @map("created_at")
+  updatedAt   DateTime  @updatedAt @map("updated_at")
+
+  importLogs         ImportLog[]
+  filedComplaints    Complaint[] @relation("FiledBy")
+  assignedComplaints Complaint[] @relation("AssignedTo")
+  sourceSnapshots    SourceSnapshot[]
+
+  @@index([role])
+  @@index([district])
+  @@index([state])
+  @@map("users")
+}
+
+// ---------------------------------------------------------------------------
+// MODEL: Project
+// ---------------------------------------------------------------------------
+model Project {
+  id               String             @id @default(cuid())
+  code             String             @unique
+  name             String
+  district         String
+  state            String
+  financialYear    String
+  amount           Decimal            @db.Decimal(18, 2)
+  status           String
+  blockchainStatus String             @default("Pending") @map("blockchain_status")
+  blockchainHash   String?            @map("blockchain_hash")
+  integrityStatus  String             @default("Review Required") @map("integrity_status")
+  createdAt        DateTime           @default(now()) @map("created_at")
+  updatedAt        DateTime           @updatedAt @map("updated_at")
+
+  records  BlockchainRecord[]
+  audits   IntegrityAudit[]
+  complaints Complaint[]
+
+  @@index([state])
+  @@index([district])
+  @@index([financialYear])
+  @@index([status])
+  @@index([blockchainStatus])
+  @@index([integrityStatus])
+  @@map("projects")
+}
+
+// ---------------------------------------------------------------------------
+// MODEL: BlockchainRecord
+// ---------------------------------------------------------------------------
+model BlockchainRecord {
+  id        String   @id @default(cuid())
+  projectId String   @map("project_id")
+  txHash    String   @unique @map("tx_hash")
+  action    String
+  amount    Decimal  @db.Decimal(18, 2)
+  payload   Json
+  createdAt DateTime @default(now()) @map("created_at")
+
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@index([projectId])
+  @@index([createdAt(sort: Desc)])
+  @@map("blockchain_records")
+}
+
+// ---------------------------------------------------------------------------
+// MODEL: IntegrityAudit
+// ---------------------------------------------------------------------------
+model IntegrityAudit {
+  id               String   @id @default(cuid())
+  projectId        String?  @map("project_id")
+  databaseAmount   Decimal  @db.Decimal(18, 2) @map("database_amount")
+  blockchainAmount Decimal  @db.Decimal(18, 2) @map("blockchain_amount")
+  difference       Decimal  @db.Decimal(18, 2)
+  status           String
+  notes            Json?
+  createdAt        DateTime @default(now()) @map("created_at")
+
+  project Project? @relation(fields: [projectId], references: [id], onDelete: SetNull)
+
+  @@index([projectId])
+  @@index([status])
+  @@index([createdAt(sort: Desc)])
+  @@map("integrity_audits")
+}
+
+// ---------------------------------------------------------------------------
+// MODEL: ImportLog
+// ---------------------------------------------------------------------------
+model ImportLog {
+  id             String       @id @default(cuid())
+  filename       String
+  importDate     DateTime     @default(now()) @map("import_date")
+  totalRecords   Int          @default(0) @map("total_records")
+  successCount   Int          @default(0) @map("success_count")
+  failedCount    Int          @default(0) @map("failed_count")
+  skippedCount   Int          @default(0) @map("skipped_count")
+  status         ImportStatus @default(Success)
+  errorDetails   Json?        @map("error_details")
+  importedBy     String?      @map("imported_by")
+  fileSizeBytes  BigInt?      @map("file_size_bytes")
+  checksumSha256 String?      @map("checksum_sha256")
+
+  importer User? @relation(fields: [importedBy], references: [id], onDelete: SetNull)
+
+  @@index([importDate(sort: Desc)])
+  @@index([status])
+  @@map("import_logs")
+}
+
+// ---------------------------------------------------------------------------
+// MODEL: Complaint
+// ---------------------------------------------------------------------------
+model Complaint {
+  id              String            @id @default(cuid())
+  projectId       String?           @map("project_id")
+  filedBy         String?           @map("filed_by")
+  assignedTo      String?           @map("assigned_to")
+  title           String
+  description     String
+  priority        ComplaintPriority @default(Medium)
+  status          ComplaintStatus   @default(Open)
+  resolutionNotes String?           @map("resolution_notes")
+  resolvedAt      DateTime?         @map("resolved_at")
+  createdAt       DateTime          @default(now()) @map("created_at")
+  updatedAt       DateTime          @updatedAt @map("updated_at")
+
+  project  Project? @relation(fields: [projectId], references: [id], onDelete: SetNull)
+  filer    User?    @relation("FiledBy",    fields: [filedBy],    references: [id], onDelete: SetNull)
+  assignee User?    @relation("AssignedTo", fields: [assignedTo], references: [id], onDelete: SetNull)
+
+  @@index([projectId])
+  @@index([filedBy])
+  @@index([status])
+  @@index([priority])
+  @@index([createdAt(sort: Desc)])
+  @@map("complaints")
+}
+
+// =============================================================================
+// TENDER & VENDOR TRANSPARENCY MODULE (IMMUTABLE AUDIT LEDGER)
+// =============================================================================
+
+// ---------------------------------------------------------------------------
+// MODEL: SourceSnapshot (Raw Government Procurement Ingestion)
+// ---------------------------------------------------------------------------
+model SourceSnapshot {
+  id             String    @id @default(cuid())
+  sourceName     String    @map("source_name")
+  sourceUrl      String    @map("source_url")
+  resourceId     String?   @map("resource_id")
+  fetchTimestamp DateTime  @default(now()) @map("fetch_timestamp")
+  rawData        Json      @map("raw_data")
+  sha256         String
+  recordCount    Int       @default(1) @map("record_count")
+  status         String    @default("VALID")
+  metadata       Json?
+  importedById   String?   @map("imported_by_id")
+  createdAt      DateTime  @default(now()) @map("created_at")
+
+  importedBy     User?     @relation(fields: [importedById], references: [id], onDelete: SetNull)
+  tenders        Tender[]
+  tenderVersions TenderVersion[]
+
+  @@index([sourceName])
+  @@index([sha256])
+  @@index([fetchTimestamp(sort: Desc)])
+  @@map("source_snapshots")
+}
+
+// ---------------------------------------------------------------------------
+// MODEL: Tender (Core Normalized Procurement Entity)
+// ---------------------------------------------------------------------------
+model Tender {
+  id                    String    @id @default(cuid())
+  tenderId              String    @unique @map("tender_id")
+  referenceNumber       String    @map("reference_number")
+  title                 String
+  department            String
+  organisationChain     String?   @map("organisation_chain")
+  tenderType            String?   @map("tender_type")
+  tenderCategory        String?   @map("tender_category")
+  formOfContract        String?   @map("form_of_contract")
+  productCategory       String?   @map("product_category")
+  state                 String
+  district              String
+  panchayat             String?
+  location              String?
+  pincode               String?
+  estimatedValue        Decimal   @db.Decimal(18, 2) @map("estimated_value")
+  currency              String    @default("INR")
+  status                String    @default("Published")
+  publishedDate         DateTime? @map("published_date")
+  closingDate           DateTime? @map("closing_date")
+  openingDate           DateTime? @map("opening_date")
+  invitingAuthority     String?   @map("inviting_authority")
+  periodOfWorkDays      Int?      @map("period_of_work_days")
+  currentVersionNumber  Int       @default(1) @map("current_version_number")
+  currentHash           String    @map("current_hash")
+  blockchainStatus      String    @default("Pending") @map("blockchain_status")
+  blockchainTxId        String?   @map("blockchain_tx_id")
+  blockchainVerified    Boolean   @default(false) @map("blockchain_verified")
+  aiRiskScore           Int?      @map("ai_risk_score")
+  aiRiskLevel           String?   @map("ai_risk_level")
+  sourceSnapshotId      String    @map("source_snapshot_id")
+  createdAt             DateTime  @default(now()) @map("created_at")
+  updatedAt             DateTime  @updatedAt @map("updated_at")
+
+  snapshot              SourceSnapshot          @relation(fields: [sourceSnapshotId], references: [id], onDelete: Cascade)
+  versions              TenderVersion[]
+  bids                  Bid[]
+  auditEvents           TenderAuditEvent[]
+  aiAnalyses            AIAnalysis[]
+  blockchainTransactions BlockchainTransaction[]
+
+  @@index([state])
+  @@index([district])
+  @@index([department])
+  @@index([status])
+  @@index([aiRiskLevel])
+  @@index([blockchainStatus])
+  @@index([createdAt(sort: Desc)])
+  @@map("tenders")
+}
+
+// ---------------------------------------------------------------------------
+// MODEL: TenderVersion (Git-like Immutable Version History)
+// ---------------------------------------------------------------------------
+model TenderVersion {
+  id                String    @id @default(cuid())
+  tenderId          String    @map("tender_id")
+  versionNumber     Int       @map("version_number")
+  previousVersionId String?   @map("previous_version_id")
+  sourceSnapshotId  String?   @map("source_snapshot_id")
+  data              Json
+  changedBy         String    @map("changed_by")
+  changedAt         DateTime  @default(now()) @map("changed_at")
+  changeReason      String    @map("change_reason")
+  previousHash      String?   @map("previous_hash")
+  newHash           String    @map("new_hash")
+  blockchainTxId    String?   @map("blockchain_tx_id")
+  createdAt         DateTime  @default(now()) @map("created_at")
+
+  tender            Tender           @relation(fields: [tenderId], references: [id], onDelete: Cascade)
+  previousVersion   TenderVersion?   @relation("TenderVersionChain", fields: [previousVersionId], references: [id], onDelete: SetNull)
+  nextVersions      TenderVersion[]  @relation("TenderVersionChain")
+  snapshot          SourceSnapshot?  @relation(fields: [sourceSnapshotId], references: [id], onDelete: SetNull)
+  blockchainTransactions BlockchainTransaction[]
+
+  @@unique([tenderId, versionNumber])
+  @@index([tenderId])
+  @@index([versionNumber])
+  @@index([newHash])
+  @@index([createdAt(sort: Desc)])
+  @@map("tender_versions")
+}
+
+// ---------------------------------------------------------------------------
+// MODEL: Vendor (Contractor / Bidder Entity)
+// ---------------------------------------------------------------------------
+model Vendor {
+  id                   String    @id @default(cuid())
+  name                 String
+  gstin                String?   @unique
+  pan                  String?
+  state                String?
+  district             String?
+  address              String?
+  isBlacklisted        Boolean   @default(false) @map("is_blacklisted")
+  currentVersionNumber Int       @default(1) @map("current_version_number")
+  createdAt            DateTime  @default(now()) @map("created_at")
+  updatedAt            DateTime  @updatedAt @map("updated_at")
+
+  versions             VendorVersion[]
+  bids                 Bid[]
+
+  @@index([name])
+  @@index([gstin])
+  @@index([state])
+  @@map("vendors")
+}
+
+// ---------------------------------------------------------------------------
+// MODEL: VendorVersion (Immutable Vendor History)
+// ---------------------------------------------------------------------------
+model VendorVersion {
+  id                String    @id @default(cuid())
+  vendorId          String    @map("vendor_id")
+  versionNumber     Int       @map("version_number")
+  previousVersionId String?   @map("previous_version_id")
+  data              Json
+  changedBy         String    @map("changed_by")
+  changeReason      String    @map("change_reason")
+  previousHash      String?   @map("previous_hash")
+  newHash           String    @map("new_hash")
+  createdAt         DateTime  @default(now()) @map("created_at")
+
+  vendor            Vendor         @relation(fields: [vendorId], references: [id], onDelete: Cascade)
+  previousVersion   VendorVersion? @relation("VendorVersionChain", fields: [previousVersionId], references: [id], onDelete: SetNull)
+  nextVersions      VendorVersion[] @relation("VendorVersionChain")
+
+  @@unique([vendorId, versionNumber])
+  @@index([vendorId])
+  @@index([newHash])
+  @@map("vendor_versions")
+}
+
+// ---------------------------------------------------------------------------
+// MODEL: Bid (Procurement Tender Bids)
+// ---------------------------------------------------------------------------
+model Bid {
+  id                   String    @id @default(cuid())
+  tenderId             String    @map("tender_id")
+  vendorId             String?   @map("vendor_id")
+  vendorName           String    @map("vendor_name")
+  vendorGstin          String?   @map("vendor_gstin")
+  bidAmount            Decimal   @db.Decimal(18, 2) @map("bid_amount")
+  submissionDate       DateTime? @map("submission_date")
+  technicalScore       Float?    @map("technical_score")
+  financialRank        String?   @map("financial_rank")
+  status               String    @default("Submitted")
+  currentVersionNumber Int       @default(1) @map("current_version_number")
+  currentHash          String    @map("current_hash")
+  blockchainTxId       String?   @map("blockchain_tx_id")
+  createdAt            DateTime  @default(now()) @map("created_at")
+  updatedAt            DateTime  @updatedAt @map("updated_at")
+
+  tender               Tender       @relation(fields: [tenderId], references: [id], onDelete: Cascade)
+  vendor               Vendor?      @relation(fields: [vendorId], references: [id], onDelete: SetNull)
+  versions             BidVersion[]
+
+  @@index([tenderId])
+  @@index([vendorId])
+  @@index([status])
+  @@map("bids")
+}
+
+// ---------------------------------------------------------------------------
+// MODEL: BidVersion (Immutable Bid History)
+// ---------------------------------------------------------------------------
+model BidVersion {
+  id                String    @id @default(cuid())
+  bidId             String    @map("bid_id")
+  versionNumber     Int       @map("version_number")
+  previousVersionId String?   @map("previous_version_id")
+  data              Json
+  bidAmount         Decimal   @db.Decimal(18, 2) @map("bid_amount")
+  status            String
+  changedBy         String    @map("changed_by")
+  changeReason      String    @map("change_reason")
+  previousHash      String?   @map("previous_hash")
+  newHash           String    @map("new_hash")
+  blockchainTxId    String?   @map("blockchain_tx_id")
+  createdAt         DateTime  @default(now()) @map("created_at")
+
+  bid               Bid         @relation(fields: [bidId], references: [id], onDelete: Cascade)
+  previousVersion   BidVersion? @relation("BidVersionChain", fields: [previousVersionId], references: [id], onDelete: SetNull)
+  nextVersions      BidVersion[] @relation("BidVersionChain")
+
+  @@unique([bidId, versionNumber])
+  @@index([bidId])
+  @@index([newHash])
+  @@map("bid_versions")
+}
+
+// ---------------------------------------------------------------------------
+// MODEL: TenderAuditEvent (Granular Git-like Audit Events)
+// ---------------------------------------------------------------------------
+model TenderAuditEvent {
+  id             String    @id @default(cuid())
+  tenderId       String    @map("tender_id")
+  eventType      String    @map("event_type")
+  actor          String
+  actorRole      String?   @map("actor_role")
+  versionNumber  Int?      @map("version_number")
+  details        Json
+  hash           String
+  blockchainTxId String?   @map("blockchain_tx_id")
+  createdAt      DateTime  @default(now()) @map("created_at")
+
+  tender         Tender                 @relation(fields: [tenderId], references: [id], onDelete: Cascade)
+  blockchainTransactions BlockchainTransaction[]
+
+  @@index([tenderId])
+  @@index([eventType])
+  @@index([createdAt(sort: Desc)])
+  @@map("tender_audit_events")
+}
+
+// ---------------------------------------------------------------------------
+// MODEL: BlockchainTransaction (Fabric Ledger References)
+// ---------------------------------------------------------------------------
+model BlockchainTransaction {
+  id              String    @id @default(cuid())
+  tenderId        String?   @map("tender_id")
+  tenderVersionId String?   @map("tender_version_id")
+  auditEventId    String?   @map("audit_event_id")
+  txId            String    @unique @map("tx_id")
+  eventType       String    @map("event_type")
+  recordId        String    @map("record_id")
+  version         Int       @default(1)
+  hash            String
+  actor           String
+  channel         String    @default("gramtrust-channel")
+  chaincode       String    @default("gramtrust")
+  blockNumber     BigInt?   @map("block_number")
+  status          String    @default("COMMITTED")
+  payload         Json
+  createdAt       DateTime  @default(now()) @map("created_at")
+
+  tender          Tender?           @relation(fields: [tenderId], references: [id], onDelete: Cascade)
+  tenderVersion   TenderVersion?    @relation(fields: [tenderVersionId], references: [id], onDelete: SetNull)
+  auditEvent      TenderAuditEvent? @relation(fields: [auditEventId], references: [id], onDelete: SetNull)
+
+  @@index([tenderId])
+  @@index([txId])
+  @@index([hash])
+  @@index([createdAt(sort: Desc)])
+  @@map("blockchain_transactions")
+}
+
+// ---------------------------------------------------------------------------
+// MODEL: AIAnalysis (Procurement Anomaly Scan Logs)
+// ---------------------------------------------------------------------------
+model AIAnalysis {
+  id           String    @id @default(cuid())
+  tenderId     String    @map("tender_id")
+  riskScore    Int       @map("risk_score")
+  riskLevel    String    @map("risk_level")
+  modelVersion String    @default("1.0.0-isolation-forest") @map("model_version")
+  features     Json
+  flags        Json
+  summary      String
+  rawResponse  Json?     @map("raw_response")
+  createdAt    DateTime  @default(now()) @map("created_at")
+
+  tender       Tender    @relation(fields: [tenderId], references: [id], onDelete: Cascade)
+
+  @@index([tenderId])
+  @@index([riskScore])
+  @@index([riskLevel])
+  @@index([createdAt(sort: Desc)])
+  @@map("ai_analyses")
 }

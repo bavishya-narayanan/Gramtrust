@@ -83,29 +83,6 @@ export async function initDb() {
     CREATE INDEX IF NOT EXISTS idx_blockchain_project ON blockchain_records(project_id);
     CREATE INDEX IF NOT EXISTS idx_audit_project ON integrity_audits(project_id);
     CREATE INDEX IF NOT EXISTS idx_complaints_project ON complaints(project_id);
-
-    ALTER TABLE document_records
-      ADD COLUMN IF NOT EXISTS amount NUMERIC(18,5),
-      ADD COLUMN IF NOT EXISTS blockchain_hash VARCHAR(64),
-      ADD COLUMN IF NOT EXISTS blockchain_tx_id VARCHAR(255),
-      ADD COLUMN IF NOT EXISTS blockchain_status VARCHAR(50) DEFAULT 'PENDING';
-
-    CREATE TABLE IF NOT EXISTS tamper_logs (
-      id TEXT PRIMARY KEY,
-      record_id TEXT NOT NULL,
-      user_id TEXT,
-      user_name TEXT NOT NULL,
-      user_role TEXT NOT NULL,
-      field_name TEXT NOT NULL,
-      old_value TEXT,
-      new_value TEXT,
-      change_type TEXT NOT NULL,
-      status TEXT NOT NULL,
-      timestamp TIMESTAMPTZ NOT NULL DEFAULT NOW()
-    );
-
-    CREATE INDEX IF NOT EXISTS idx_tamper_logs_timestamp ON tamper_logs(timestamp DESC);
-    CREATE INDEX IF NOT EXISTS idx_tamper_logs_record ON tamper_logs(record_id);
   `);
 
   console.log('DB tables ready');

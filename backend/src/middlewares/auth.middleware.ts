@@ -14,7 +14,7 @@ declare global {
 /**
  * Middleware: verifies JWT Bearer token and attaches payload to req.user
  */
-export function authenticate(req: Request, res: Response, next: NextFunction) {
+export function authenticate(req: Request, _res: Response, next: NextFunction) {
   const authHeader = req.headers.authorization;
   if (!authHeader || !authHeader.startsWith('Bearer ')) {
     return next(new AppError('Authentication required. Please log in.', 401));
@@ -35,7 +35,7 @@ export function authenticate(req: Request, res: Response, next: NextFunction) {
  * Must be used AFTER authenticate().
  */
 export function requireRole(...roles: string[]) {
-  return (req: Request, res: Response, next: NextFunction) => {
+  return (req: Request, _res: Response, next: NextFunction) => {
     if (!req.user) {
       return next(new AppError('Authentication required.', 401));
     }

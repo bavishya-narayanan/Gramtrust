@@ -5,6 +5,7 @@ export type TransactionType = 'Genesis' | 'Import' | 'Store' | 'Verification' | 
 
 export interface LedgerProject {
   id: string;
+  code?: string;
   name: string;
   district: string;
   state: string;

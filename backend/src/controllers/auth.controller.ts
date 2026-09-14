@@ -14,7 +14,7 @@ export const authController = {
   login: asyncHandler(async (req: Request, res: Response) => {
     const parsed = loginSchema.safeParse(req.body);
     if (!parsed.success) {
-      throw new AppError(parsed.error.errors[0].message, 400);
+      throw new AppError(parsed.error.errors[0]?.message || 'Invalid login payload', 400);
     }
 
     const { email, password } = parsed.data;
